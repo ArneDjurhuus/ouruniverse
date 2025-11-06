@@ -1,3 +1,11 @@
+## Cloud mode and short invite codes
+
+If you want cloud sync and pairing, the app supports Supabase:
+- Provide `SUPABASE_URL` and `SUPABASE_ANON` via `--dart-define` when running.
+- Apply your base schema (profiles, couples, couple_members, checkins) as previously provided.
+- To enable short invite codes for easier pairing, run `supabase/short_codes.sql` in the Supabase SQL editor. This creates `public.short_codes` with RLS so couple members can create codes and any authenticated user can resolve a valid, unexpired code to a `couple_id`.
+
+On iOS, camera access requires a usage description. We've added `NSCameraUsageDescription` to `ios/Runner/Info.plist`.
 # Together – two-person recovery companion (Flutter)
 
 This app implements the first milestone of "Together": a calm, trust-centered daily companion for two linked users (Arne & Cecilie) to support recovery through simple check-ins and gentle transparency.

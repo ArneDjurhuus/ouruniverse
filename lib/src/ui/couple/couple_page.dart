@@ -17,10 +17,12 @@ class CouplePage extends StatefulWidget {
 class _CouplePageState extends State<CouplePage> {
   String? _coupleId;
   List<String> _members = const [];
+  Map<String, String> _displayNames = const {};
   bool _busy = false;
   final _name = TextEditingController();
   final _joinCode = TextEditingController();
   String? _error;
+  String? _shortCode;
 
   @override
   void initState() {
@@ -37,13 +39,16 @@ class _CouplePageState extends State<CouplePage> {
     try {
       final id = await svc.currentCoupleId();
       List<String> members = const [];
+      Map<String, String> names = const {};
       if (id != null) {
         members = await svc.listMemberIds(id);
+        names = await svc.fetchDisplayNames(members);
       }
       if (!mounted) return;
       setState(() {
         _coupleId = id;
         _members = members;
+        _displayNames = names;
       });
     } catch (e) {
       if (!mounted) return;
@@ -134,7 +139,7 @@ class _CouplePageState extends State<CouplePage> {
               const SizedBox(height: 8),
               TextField(
                 controller: _joinCode,
-                decoration: const InputDecoration(labelText: 'Invite code (couple ID)'),
+                decoration: const InputDecoration(labelText: 'Invite code (short or couple ID)'),
               ),
               const SizedBox(height: 8),
               OutlinedButton(
@@ -147,7 +152,19 @@ class _CouplePageState extends State<CouplePage> {
                           _error = null;
                         });
                         try {
-                          await CoupleService(client).joinCouple(_joinCode.text.trim());
+                          final svc = CoupleService(client);
+                          final raw = _joinCode.text.trim();
+                            String? idToJoin;
+                            final uuidRegex = RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$');
+                              if (uuidRegex.hasMatch(raw)) {
+                            idToJoin = raw;
+                          } else {
+                            idToJoin = await svc.resolveShortCode(raw);
+                          }
+                          if (idToJoin == null) {
+                            throw StateError('Invalid or expired invite code');
+                          }
+                          await svc.joinCouple(idToJoin);
                           await _refresh();
                           messenger.showSnackBar(const SnackBar(content: Text('Joined couple')));
                         } catch (e) {
@@ -195,7 +212,7 @@ class _CouplePageState extends State<CouplePage> {
                             height: 240,
                             child: Center(
                               child: QrImageView(
-                                data: _coupleId!,
+                                data: _shortCode ?? _coupleId!,
                                 version: QrVersions.auto,
                                 size: 220,
                               ),
@@ -209,13 +226,63 @@ class _CouplePageState extends State<CouplePage> {
                   ),
                 ],
               ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: _busy || _coupleId == null
+                        ? null
+                        : () async {
+                            setState(() {
+                              _busy = true;
+                              _error = null;
+                            });
+                            try {
+                              final code = await CoupleService(client).generateShortCode(_coupleId!);
+                              setState(() => _shortCode = code);
+                              final messenger = ScaffoldMessenger.of(context);
+                              messenger.showSnackBar(const SnackBar(content: Text('Short invite code created')));
+                            } catch (e) {
+                              if (!mounted) return;
+                              setState(() => _error = '$e');
+                            } finally {
+                              if (mounted) setState(() => _busy = false);
+                            }
+                          },
+                    icon: const Icon(Icons.key),
+                    label: const Text('Generate short invite code'),
+                  ),
+                  const SizedBox(width: 8),
+                  if (_shortCode != null)
+                    Row(children: [
+                      SelectableText('Code: $_shortCode'),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        tooltip: 'Copy short code',
+                        onPressed: () async {
+                          final messenger = ScaffoldMessenger.of(context);
+                          await Clipboard.setData(ClipboardData(text: _shortCode!));
+                          messenger.showSnackBar(const SnackBar(content: Text('Short code copied')));
+                        },
+                        icon: const Icon(Icons.copy),
+                      ),
+                    ]),
+                ],
+              ),
               const SizedBox(height: 16),
               Text('Members (${_members.length})', style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 8),
-              ..._members.map((id) => ListTile(
-                    leading: const Icon(Icons.person_outline),
-                    title: Text(id),
-                  )),
+              ..._members.map((id) {
+                final you = Supabase.instance.client.auth.currentUser?.id == id;
+                final name = _displayNames[id];
+                final obfuscated = '${id.substring(0, 6)}…';
+                final title = name ?? (you ? 'You ($obfuscated)' : obfuscated);
+                return ListTile(
+                  leading: const Icon(Icons.person_outline),
+                  title: Text(title),
+                  subtitle: name == null ? Text(id) : null,
+                );
+              }),
               const SizedBox(height: 24),
               Text('Join with QR', style: Theme.of(context).textTheme.titleLarge),
               const SizedBox(height: 8),
@@ -224,16 +291,27 @@ class _CouplePageState extends State<CouplePage> {
                     ? null
                     : () async {
                         final nav = Navigator.of(context);
-                        final code = await nav.pushNamed<String>('/scanQr');
+                        final scanned = await nav.pushNamed<String>('/scanQr');
                         if (!mounted) return;
-                        if (code != null && code.isNotEmpty) {
+                        if (scanned != null && scanned.isNotEmpty) {
                           final messenger = ScaffoldMessenger.of(context);
                           setState(() {
                             _busy = true;
                             _error = null;
                           });
                           try {
-                            await CoupleService(client).joinCouple(code);
+                            final svc = CoupleService(client);
+                            String? idToJoin;
+                            final uuidRegex = RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$');
+                            if (uuidRegex.hasMatch(scanned)) {
+                              idToJoin = scanned;
+                            } else {
+                              idToJoin = await svc.resolveShortCode(scanned);
+                            }
+                            if (idToJoin == null) {
+                              throw StateError('Invalid or expired invite code');
+                            }
+                            await svc.joinCouple(idToJoin);
                             await _refresh();
                             messenger.showSnackBar(
                                 const SnackBar(content: Text('Joined couple via QR')));
