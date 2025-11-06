@@ -1,0 +1,45 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://example.com/schemas/checkin.schema.json",
+  "title": "DailyCheckIn",
+  "description": "Schema for a daily check-in entry in the Together app",
+  "type": "object",
+  "required": [
+    "id",
+    "createdAt",
+    "mood",
+    "onTrack"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "mood": {
+      "type": "string",
+      "enum": ["veryLow", "low", "neutral", "good", "great"]
+    },
+    "onTrack": {
+      "type": "string",
+      "enum": ["yes", "no", "struggling"]
+    },
+    "helped": {
+      "type": "string"
+    },
+    "triggers": {
+      "type": "string"
+    },
+    "gratitude": {
+      "type": "string"
+    },
+    "shareSummary": {
+      "type": "boolean",
+      "default": false
+    }
+  },
+  "additionalProperties": false
+}
